@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Room Camera</title>
+<style>
+  body { font-family: system-ui, sans-serif; background: #111; color: #eee; margin: 0; padding: 20px; }
+  .card { max-width: 480px; margin: 0 auto; background: #1c1c1c; border-radius: 12px; padding: 20px; }
+  input { width: 100%; padding: 10px; margin: 6px 0; border-radius: 6px; border: 1px solid #333; background: #222; color: #eee; box-sizing: border-box; }
+  button { width: 100%; padding: 10px; margin-top: 8px; border-radius: 6px; border: none; background: #3b82f6; color: white; font-weight: 600; cursor: pointer; }
+  button:hover { background: #2563eb; }
+  #liveImg { width: 100%; border-radius: 8px; background: #000; display: block; }
+  .reading { display: flex; gap: 16px; margin: 12px 0; font-size: 1.1em; }
+  .hidden { display: none; }
+  #gallery { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
+  #gallery img { width: 100%; border-radius: 6px; }
+  .error { color: #f87171; font-size: 0.9em; min-height: 1.2em; }
+  .status { font-size: 0.85em; color: #999; }
+</style>
+</head>
+<body>
+
+<div id="loginCard" class="card">
+  <h2>Room Camera Login</h2>
+  <input id="username" placeholder="Username" autocomplete="username" />
+  <input id="password" type="password" placeholder="Password" autocomplete="current-password" />
+  <button onclick="login()">Log in</button>
+  <div class="error" id="loginError"></div>
+</div>
+
+<div id="dashCard" class="card hidden">
+  <h2>Room Camera</h2>
+  <img id="liveImg" alt="Live feed will appear here" />
+  <div class="status" id="wsStatus">Connecting...</div>
+  <div class="reading">
+    <div>🌡️ <span id="temp">--</span>°C</div>
+    <div>💧 <span id="humidity">--</span>%</div>
+  </div>
+  <button onclick="capture()">Capture Photo</button>
+  <h3>Saved Photos</h3>
+  <div id="gallery"></div>
+</div>
+
+<script>
+let token = localStorage.getItem("token");
+let ws;
+
+async function login() {
+  const username = document.getElementById("username").value;
+  const password = document.getElementById("password").value;
+  const errEl = document.getElementById("loginError");
+  errEl.textContent = "";
+  try {
+    const res = await fetch("/api/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password }),
+    });
+    const data = await res.json();
+    if (!res.ok) { errEl.textContent = data.error || "Login failed"; return; }
+    token = data.token;
+    localStorage.setItem("token", token);
+    showDashboard();
+  } catch (e) {
+    errEl.textContent = "Could not reach server";
+  }
+}
+
+function showDashboard() {
+  document.getElementById("loginCard").classList.add("hidden");
+  document.getElementById("dashCard").classList.remove("hidden");
+  connectWebSocket();
+  loadPhotos();
+}
+
+function connectWebSocket() {
+  const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  ws = new WebSocket(`${proto}//${location.host}/client?token=${encodeURIComponent(token)}`);
+  ws.binaryType = "arraybuffer";
+  const statusEl = document.getElementById("wsStatus");
+
+  ws.onopen = () => (statusEl.textContent = "Live");
+  ws.onclose = () => {
+    statusEl.textContent = "Disconnected - retrying...";
+    setTimeout(connectWebSocket, 2000);
+  };
+  ws.onmessage = (event) => {
+    if (typeof event.data === "string") {
+      const msg = JSON.parse(event.data);
+      if (msg.type === "sensor") {
+        document.getElementById("temp").textContent = msg.tempC ?? "--";
+        document.getElementById("humidity").textContent = msg.humidity ?? "--";
+      } else if (msg.type === "photo-saved") {
+        loadPhotos();
+      }
+    } else {
+      const blob = new Blob([event.data], { type: "image/jpeg" });
+      const url = URL.createObjectURL(blob);
+      const img = document.getElementById("liveImg");
+      const old = img.src;
+      img.src = url;
+      if (old && old.startsWith("blob:")) URL.revokeObjectURL(old);
+    }
+  };
+}
+
+async function capture() {
+  await fetch("/api/capture", {
+    method: "POST",
+    headers: { Authorization: "Bearer " + token },
+  });
+}
+
+async function loadPhotos() {
+  const res = await fetch("/api/photos", { headers: { Authorization: "Bearer " + token } });
+  if (!res.ok) return;
+  const photos = await res.json();
+  const gallery = document.getElementById("gallery");
+  gallery.innerHTML = "";
+  for (const p of photos) {
+    const img = document.createElement("img");
+    img.src = p.url;
+    img.title = new Date(p.takenAt).toLocaleString();
+    gallery.appendChild(img);
+  }
+}
+
+if (token) showDashboard();
+</script>
+</body>
+</html>

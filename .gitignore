@@ -1,0 +1,28 @@
+# Secrets — never commit real credentials
+.env
+backend/.env
+backend-deno/.env
+
+# Node (backend/)
+node_modules/
+npm-debug.log*
+package-lock.json
+
+# Saved captures (local-disk fallback in backend/) — don't commit photos
+backend/photos/*
+!backend/photos/.gitkeep
+
+# Deno (backend-deno/)
+.deno/
+
+# Arduino build artifacts, if compiling from CLI
+firmware/build/
+*.hex
+*.bin
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp

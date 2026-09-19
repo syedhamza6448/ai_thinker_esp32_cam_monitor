@@ -1,0 +1,17 @@
+{
+  "name": "esp32-cam-relay",
+  "version": "1.0.0",
+  "description": "Relay backend for ESP32-CAM live view + DHT11 dashboard with login",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cookie-parser": "^1.4.6",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2",
+    "ws": "^8.17.0"
+  }
+}
