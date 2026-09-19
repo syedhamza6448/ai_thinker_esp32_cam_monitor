@@ -17,7 +17,8 @@
 // Deno Deploy has no writable disk to fall back to — everything is
 // stateless except KV and BroadcastChannel.
 
-import { compare, hash } from "npm:bcryptjs@2.4.3";
+import bcrypt from "npm:bcryptjs@2.4.3";
+const { compare, hash } = bcrypt;
 import { SignJWT, jwtVerify } from "npm:jose@5.9.6";
 
 const DEVICE_SECRET = Deno.env.get("DEVICE_SECRET")!;
