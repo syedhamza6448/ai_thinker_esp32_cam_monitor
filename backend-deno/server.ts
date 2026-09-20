@@ -12,7 +12,7 @@
 //
 // Required env vars (set these in the Deno Deploy dashboard, no .env file):
 //   DEVICE_SECRET, AUTH_USERNAME, AUTH_PASSWORD, JWT_SECRET,
-//   CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET
+//   CLOUDINARY_CLOUD_NAME, CLOUDINARY_UPLOAD_PRESET
 // Cloudinary is required here (not optional like the Node version) because
 // Deno Deploy has no writable disk to fall back to — everything is
 // stateless except KV and BroadcastChannel.
@@ -26,8 +26,7 @@ const AUTH_USERNAME = Deno.env.get("AUTH_USERNAME")!;
 const AUTH_PASSWORD_HASH = await hash(Deno.env.get("AUTH_PASSWORD")!, 10);
 const JWT_SECRET = new TextEncoder().encode(Deno.env.get("JWT_SECRET")!);
 const CLOUDINARY_CLOUD_NAME = Deno.env.get("CLOUDINARY_CLOUD_NAME")!;
-const CLOUDINARY_API_KEY = Deno.env.get("CLOUDINARY_API_KEY")!;
-const CLOUDINARY_API_SECRET = Deno.env.get("CLOUDINARY_API_SECRET")!;
+const CLOUDINARY_UPLOAD_PRESET = Deno.env.get("CLOUDINARY_UPLOAD_PRESET")!;
 
 const kv = await Deno.openKv();
 const bc = new BroadcastChannel("camera-relay");
@@ -95,20 +94,9 @@ function relayJson(kind: "sensor" | "photo-saved", payload: unknown) {
 }
 
 async function uploadToCloudinary(bytes: Uint8Array, timestamp: number) {
-  const paramsToSign = `timestamp=${timestamp}`;
-  const sigBuf = await crypto.subtle.digest(
-    "SHA-1",
-    new TextEncoder().encode(paramsToSign + CLOUDINARY_API_SECRET)
-  );
-  const signature = [...new Uint8Array(sigBuf)]
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-
   const form = new FormData();
   form.append("file", new Blob([bytes]), `capture-${timestamp}.jpg`);
-  form.append("api_key", CLOUDINARY_API_KEY);
-  form.append("timestamp", String(timestamp));
-  form.append("signature", signature);
+  form.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
 
   const res = await fetch(
     `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`,
