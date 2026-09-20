@@ -75,6 +75,24 @@ bc.onmessage = (event) => {
   }
 };
 
+function relayFrame(bytes: Uint8Array) {
+  // Deliver directly to clients on THIS isolate (BroadcastChannel does not
+  // call the sender's own onmessage, so without this, a browser connected
+  // to the same isolate as the device would never see frames).
+  for (const ws of localClientSockets) {
+    if (ws.readyState === WebSocket.OPEN) ws.send(bytes);
+  }
+  bc.postMessage({ kind: "frame", bytes: bytes.buffer }); // for OTHER isolates
+}
+
+function relayJson(kind: "sensor" | "photo-saved", payload: unknown) {
+  const json = JSON.stringify(payload);
+  for (const ws of localClientSockets) {
+    if (ws.readyState === WebSocket.OPEN) ws.send(json);
+  }
+  bc.postMessage({ kind, payload }); // for OTHER isolates
+}
+
 async function uploadToCloudinary(bytes: Uint8Array, timestamp: number) {
   const paramsToSign = `timestamp=${timestamp}`;
   const sigBuf = await crypto.subtle.digest(
@@ -109,8 +127,9 @@ async function savePhoto(bytes: Uint8Array) {
   list.push(entry);
   await kv.set(["photos"], list);
 
-  bc.postMessage({ kind: "photo-saved", payload: entry });
+  relayJson("photo-saved", entry);
 }
+
 
 Deno.serve(async (req) => {
   const url = new URL(req.url);
@@ -133,7 +152,10 @@ Deno.serve(async (req) => {
   if (url.pathname === "/api/capture" && req.method === "POST") {
     const token = (req.headers.get("authorization") ?? "").replace("Bearer ", "");
     if (!(await verifyToken(token))) return Response.json({ error: "Not logged in" }, { status: 401 });
-    bc.postMessage({ kind: "capture-command" });
+    if (localDeviceSocket && localDeviceSocket.readyState === WebSocket.OPEN) {
+      localDeviceSocket.send("capture");
+    }
+    bc.postMessage({ kind: "capture-command" }); // in case device is on another isolate
     return Response.json({ ok: true });
   }
 
@@ -153,7 +175,7 @@ Deno.serve(async (req) => {
         } else if (msg.type === "sensor" && authed) {
           const reading = { tempC: msg.tempC, humidity: msg.humidity, updatedAt: Date.now() };
           await kv.set(["latest-reading"], reading);
-          bc.postMessage({ kind: "sensor", payload: reading });
+          relayJson("sensor", reading);
           console.log("Device: sensor reading relayed", reading);
         }
         return;
@@ -167,7 +189,7 @@ Deno.serve(async (req) => {
       const jpeg = bytes.slice(1); // copy, so BroadcastChannel doesn't clone extra bytes
       if (frameType === FRAME_TYPE_LIVE) {
         console.log("Device: live frame received, bytes =", jpeg.length, "clients =", localClientSockets.size);
-        bc.postMessage({ kind: "frame", bytes: jpeg.buffer });
+        relayFrame(jpeg);
       } else if (frameType === FRAME_TYPE_CAPTURE) {
         console.log("Device: capture frame received, bytes =", jpeg.length);
         savePhoto(jpeg).catch((e) => console.error("Save photo failed:", e));
