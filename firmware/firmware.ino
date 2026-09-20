@@ -48,6 +48,8 @@ const char* DEVICE_SECRET = "change-this-to-a-long-random-string";
 #define DHTTYPE DHT11
 DHT dht(DHTPIN, DHTTYPE);
 
+#define FLASH_GPIO_NUM 4  // onboard flash LED, free on AI-Thinker boards
+
 WebSocketsClient webSocket;
 
 // AI-Thinker ESP32-CAM pin map
@@ -118,18 +120,30 @@ void initCamera(framesize_t size, int quality) {
 void sendSensorReading() {
   float h = dht.readHumidity();
   float t = dht.readTemperature();
-  if (isnan(h) || isnan(t)) return; // skip a bad read, try again next cycle
+  if (isnan(h) || isnan(t)) {
+    Serial.println("DHT11 read FAILED (got NaN) - check wiring on GPIO 13");
+    return;
+  }
+  Serial.printf("DHT11 OK: %.1fC, %.1f%%\n", t, h);
 
   String json = "{\"type\":\"sensor\",\"tempC\":" + String(t, 1) +
                 ",\"humidity\":" + String(h, 1) + "}";
   webSocket.sendTXT(json);
 }
 
+framesize_t currentSize = FRAMESIZE_QVGA;
+
 void sendFrame(uint8_t frameType, framesize_t size, int quality) {
-  // Swap resolution for a one-off high quality capture, then swap back.
-  sensor_t *s = esp_camera_sensor_get();
-  s->set_framesize(s, size);
-  s->set_quality(s, quality);
+  if (size != currentSize) {
+    // set_framesize() alone doesn't resize the underlying DMA buffers
+    // correctly on a lot of AI-Thinker boards, which is what causes
+    // "cam_hal: FB-OVF". A full deinit + reinit allocates fresh, correctly
+    // sized buffers for the new resolution.
+    esp_camera_deinit();
+    initCamera(size, quality);
+    currentSize = size;
+    delay(100); // let the sensor settle (exposure/white balance) before grabbing
+  }
 
   camera_fb_t *fb = esp_camera_fb_get();
   if (!fb) {
@@ -162,8 +176,14 @@ void webSocketEvent(WStype_t type, uint8_t *payload, size_t length) {
       break;
     case WStype_TEXT: {
       String msg = String((char *)payload).substring(0, length);
+      Serial.print("Received text command: ");
+      Serial.println(msg);
       if (msg == "capture") {
         captureRequested = true;
+      } else if (msg == "flash_on") {
+        digitalWrite(FLASH_GPIO_NUM, HIGH);
+      } else if (msg == "flash_off") {
+        digitalWrite(FLASH_GPIO_NUM, LOW);
       }
       break;
     }
@@ -175,6 +195,9 @@ void webSocketEvent(WStype_t type, uint8_t *payload, size_t length) {
 void setup() {
   Serial.begin(115200);
   dht.begin();
+
+  pinMode(FLASH_GPIO_NUM, OUTPUT);
+  digitalWrite(FLASH_GPIO_NUM, LOW); // start off
 
   // Live view runs small/fast; we bump resolution only for a real capture.
   initCamera(FRAMESIZE_QVGA, 12);
