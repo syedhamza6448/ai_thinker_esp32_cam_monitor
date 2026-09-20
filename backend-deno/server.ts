@@ -63,7 +63,7 @@ bc.onmessage = (event) => {
       if (ws.readyState === WebSocket.OPEN) ws.send(bytes);
     }
   } else if (msg.kind === "sensor" || msg.kind === "photo-saved") {
-    const json = JSON.stringify(msg.payload);
+    const json = JSON.stringify({ type: msg.kind, ...msg.payload });
     for (const ws of localClientSockets) {
       if (ws.readyState === WebSocket.OPEN) ws.send(json);
     }
@@ -71,6 +71,10 @@ bc.onmessage = (event) => {
     console.log("Capture-command received via broadcast. Device on this isolate?", !!localDeviceSocket);
     if (localDeviceSocket && localDeviceSocket.readyState === WebSocket.OPEN) {
       localDeviceSocket.send("capture");
+    }
+  } else if (msg.kind === "flash-command") {
+    if (localDeviceSocket && localDeviceSocket.readyState === WebSocket.OPEN) {
+      localDeviceSocket.send(msg.command);
     }
   }
 };
@@ -85,8 +89,8 @@ function relayFrame(bytes: Uint8Array) {
   bc.postMessage({ kind: "frame", bytes: bytes.buffer }); // for OTHER isolates
 }
 
-function relayJson(kind: "sensor" | "photo-saved", payload: unknown) {
-  const json = JSON.stringify(payload);
+function relayJson(kind: "sensor" | "photo-saved", payload: object) {
+  const json = JSON.stringify({ type: kind, ...payload });
   for (const ws of localClientSockets) {
     if (ws.readyState === WebSocket.OPEN) ws.send(json);
   }
@@ -146,6 +150,26 @@ Deno.serve(async (req) => {
       localDeviceSocket.send("capture");
     }
     bc.postMessage({ kind: "capture-command" }); // in case device is on another isolate
+    return Response.json({ ok: true });
+  }
+
+  if (url.pathname === "/api/flash" && req.method === "POST") {
+    const token = (req.headers.get("authorization") ?? "").replace("Bearer ", "");
+    if (!(await verifyToken(token))) return Response.json({ error: "Not logged in" }, { status: 401 });
+    let on = false;
+    try {
+      const body = await req.json();
+      on = !!body.on;
+    } catch (e) {
+      console.error("Flash request: failed to parse body", e);
+      return Response.json({ error: "Bad request body" }, { status: 400 });
+    }
+    const command = on ? "flash_on" : "flash_off";
+    console.log("Flash requested:", command, "- Device on this isolate?", !!localDeviceSocket);
+    if (localDeviceSocket && localDeviceSocket.readyState === WebSocket.OPEN) {
+      localDeviceSocket.send(command);
+    }
+    bc.postMessage({ kind: "flash-command", command }); // in case device is on another isolate
     return Response.json({ ok: true });
   }
 
