@@ -140,30 +140,41 @@ Deno.serve(async (req) => {
   if (url.pathname === "/device") {
     const { socket, response } = Deno.upgradeWebSocket(req);
     let authed = false;
+    console.log("Device: WebSocket opened, waiting for auth...");
     socket.onmessage = async (event) => {
       if (typeof event.data === "string") {
         const msg = JSON.parse(event.data);
         if (msg.type === "auth" && msg.secret === DEVICE_SECRET) {
           authed = true;
           localDeviceSocket = socket;
+          console.log("Device: authenticated OK");
+        } else if (msg.type === "auth") {
+          console.log("Device: auth FAILED, secret mismatch");
         } else if (msg.type === "sensor" && authed) {
           const reading = { tempC: msg.tempC, humidity: msg.humidity, updatedAt: Date.now() };
           await kv.set(["latest-reading"], reading);
           bc.postMessage({ kind: "sensor", payload: reading });
+          console.log("Device: sensor reading relayed", reading);
         }
         return;
       }
-      if (!authed) return;
+      if (!authed) {
+        console.log("Device: got binary frame before auth, ignoring");
+        return;
+      }
       const bytes = new Uint8Array(event.data as ArrayBuffer);
       const frameType = bytes[0];
       const jpeg = bytes.slice(1); // copy, so BroadcastChannel doesn't clone extra bytes
       if (frameType === FRAME_TYPE_LIVE) {
+        console.log("Device: live frame received, bytes =", jpeg.length, "clients =", localClientSockets.size);
         bc.postMessage({ kind: "frame", bytes: jpeg.buffer });
       } else if (frameType === FRAME_TYPE_CAPTURE) {
+        console.log("Device: capture frame received, bytes =", jpeg.length);
         savePhoto(jpeg).catch((e) => console.error("Save photo failed:", e));
       }
     };
     socket.onclose = () => {
+      console.log("Device: WebSocket closed");
       if (localDeviceSocket === socket) localDeviceSocket = null;
     };
     return response;
@@ -173,8 +184,14 @@ Deno.serve(async (req) => {
     const token = url.searchParams.get("token") ?? "";
     if (!(await verifyToken(token))) return new Response("Unauthorized", { status: 401 });
     const { socket, response } = Deno.upgradeWebSocket(req);
-    socket.onopen = () => localClientSockets.add(socket);
-    socket.onclose = () => localClientSockets.delete(socket);
+    socket.onopen = () => {
+      localClientSockets.add(socket);
+      console.log("Client: browser connected, total clients =", localClientSockets.size);
+    };
+    socket.onclose = () => {
+      localClientSockets.delete(socket);
+      console.log("Client: browser disconnected, total clients =", localClientSockets.size);
+    };
     return response;
   }
 
