@@ -8,49 +8,154 @@
   body { font-family: system-ui, sans-serif; background: #111; color: #eee; margin: 0; padding: 20px; }
   .card { max-width: 480px; margin: 0 auto; background: #1c1c1c; border-radius: 12px; padding: 20px; }
   input { width: 100%; padding: 10px; margin: 6px 0; border-radius: 6px; border: 1px solid #333; background: #222; color: #eee; box-sizing: border-box; }
-  button { width: 100%; padding: 10px; margin-top: 8px; border-radius: 6px; border: none; background: #3b82f6; color: white; font-weight: 600; cursor: pointer; }
+  button { padding: 10px; margin-top: 8px; border-radius: 6px; border: none; background: #3b82f6; color: white; font-weight: 600; cursor: pointer; font-size: 0.95em; }
+  button.full { width: 100%; }
   button:hover { background: #2563eb; }
+  button.secondary { background: #333; }
+  button.secondary:hover { background: #444; }
+  button.danger { background: #dc2626; }
+  button.danger:hover { background: #b91c1c; }
+  button.small { padding: 4px 8px; margin: 0; font-size: 0.8em; }
   #liveImg { width: 100%; border-radius: 8px; background: #000; display: block; }
   .reading { display: flex; gap: 16px; margin: 12px 0; font-size: 1.1em; }
   .hidden { display: none; }
+  .row { display: flex; gap: 8px; }
+  .row > * { flex: 1; }
   #gallery { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
-  #gallery img { width: 100%; border-radius: 6px; }
+  .photo-tile { position: relative; }
+  .photo-tile img { width: 100%; border-radius: 6px; display: block; }
+  .photo-tile .del-btn { position: absolute; top: 4px; right: 4px; padding: 2px 6px; font-size: 0.75em; }
   .error { color: #f87171; font-size: 0.9em; min-height: 1.2em; }
   .status { font-size: 0.85em; color: #999; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 14px; }
+  .tabs button { flex: 1; background: #222; }
+  .tabs button.active { background: #3b82f6; }
+  .top-row { display: flex; justify-content: space-between; align-items: center; }
+  .top-row button { width: auto; }
+  .viewer-row { display: flex; justify-content: space-between; align-items: center; background: #222; border-radius: 8px; padding: 8px 10px; margin-bottom: 6px; }
+  .badge { font-size: 0.75em; padding: 2px 8px; border-radius: 10px; margin-left: 8px; }
+  .badge.pending { background: #78350f; color: #fcd34d; }
+  .badge.approved { background: #14532d; color: #86efac; }
+  .badge.revoked { background: #450a0a; color: #fca5a5; }
+  .msg { text-align: center; padding: 20px 0; }
 </style>
 </head>
 <body>
 
-<div id="loginCard" class="card">
-  <h2>Room Camera Login</h2>
-  <input id="username" placeholder="Username" autocomplete="username" />
-  <input id="password" type="password" placeholder="Password" autocomplete="current-password" />
-  <button onclick="login()">Log in</button>
-  <div class="error" id="loginError"></div>
+<div id="landingCard" class="card">
+  <h2>🏠 Room Camera</h2>
+  <p>Who's this?</p>
+  <button class="full" onclick="showAdminLogin()">🔑 I'm the Admin</button>
+  <button class="full secondary" onclick="showViewerLogin()">👋 I'm a close one</button>
+</div>
+
+<div id="adminLoginCard" class="card hidden">
+  <h2>Admin Login</h2>
+  <input id="adminUsername" placeholder="Username" autocomplete="username" />
+  <input id="adminPassword" type="password" placeholder="Password" autocomplete="current-password" />
+  <button class="full" onclick="adminLogin()">Log in</button>
+  <button class="full secondary" onclick="backToLanding()">Back</button>
+  <div class="error" id="adminLoginError"></div>
+</div>
+
+<div id="viewerLoginCard" class="card hidden">
+  <h2>Enter as a Viewer</h2>
+  <input id="viewerName" placeholder="Your name" autocomplete="name" />
+  <input id="viewerPassword" type="password" placeholder="Password" autocomplete="current-password" />
+  <button class="full" onclick="viewerLogin()">Continue</button>
+  <button class="full secondary" onclick="backToLanding()">Back</button>
+  <div class="error" id="viewerLoginError"></div>
+</div>
+
+<div id="pendingCard" class="card hidden">
+  <div class="msg">
+    <h3>⏳ Waiting for approval</h3>
+    <p>The admin needs to approve you before you can watch. This page will update automatically.</p>
+  </div>
+  <button class="full secondary" onclick="cancelPending()">Cancel</button>
+</div>
+
+<div id="revokedCard" class="card hidden">
+  <div class="msg">
+    <h3>🚫 Access revoked</h3>
+    <p>The admin has revoked your access.</p>
+  </div>
+  <button class="full secondary" onclick="backToLanding()">Back</button>
 </div>
 
 <div id="dashCard" class="card hidden">
-  <h2>Room Camera</h2>
-  <img id="liveImg" alt="Live feed will appear here" />
-  <div class="status" id="wsStatus">Connecting...</div>
-  <div class="reading">
-    <div>🌡️ <span id="temp">--</span>°C</div>
-    <div>💧 <span id="humidity">--</span>%</div>
+  <div class="top-row">
+    <h2 id="dashTitle">Room Camera</h2>
+    <button class="secondary small" onclick="logout()">Log out</button>
   </div>
-  <button onclick="capture()">Capture Photo</button>
-  <button id="flashBtn" onclick="toggleFlash()">Turn Flash On</button>
-  <h3>Saved Photos</h3>
-  <div id="gallery"></div>
+
+  <div class="tabs">
+    <button id="tabLiveBtn" onclick="showTab('live')">📹 Live Feed</button>
+    <button id="tabPhotosBtn" onclick="showTab('photos')">🖼️ Photos</button>
+    <button id="tabWatchersBtn" class="hidden" onclick="showTab('watchers')">👥 Watchers</button>
+  </div>
+
+  <div id="tabLive">
+    <img id="liveImg" alt="Live feed will appear here" />
+    <div class="status" id="wsStatus">Connecting...</div>
+    <div class="reading">
+      <div>🌡️ <span id="temp">--</span>°C</div>
+      <div>💧 <span id="humidity">--</span>%</div>
+    </div>
+    <div id="adminControls" class="row hidden">
+      <button onclick="capture()">📸 Capture</button>
+      <button id="flashBtn" class="secondary" onclick="toggleFlash()">⚡ Flash On</button>
+    </div>
+  </div>
+
+  <div id="tabPhotos" class="hidden">
+    <div id="gallery"></div>
+  </div>
+
+  <div id="tabWatchers" class="hidden">
+    <div class="row">
+      <input id="newViewerName" placeholder="Add a viewer by name" />
+      <button onclick="addViewer()">Add</button>
+    </div>
+    <div id="watchersList" style="margin-top: 12px;"></div>
+  </div>
 </div>
 
 <script>
 let token = localStorage.getItem("token");
+let role = localStorage.getItem("role");
+let viewerName = localStorage.getItem("viewerName");
+let expiresAt = Number(localStorage.getItem("expiresAt") || 0);
 let ws;
+let pendingPollTimer = null;
+let expiryTimer = null;
+let pendingCreds = null;
 
-async function login() {
-  const username = document.getElementById("username").value;
-  const password = document.getElementById("password").value;
-  const errEl = document.getElementById("loginError");
+function hideAllCards() {
+  ["landingCard", "adminLoginCard", "viewerLoginCard", "pendingCard", "revokedCard", "dashCard"]
+    .forEach((id) => document.getElementById(id).classList.add("hidden"));
+}
+
+function backToLanding() {
+  stopPendingPoll();
+  hideAllCards();
+  document.getElementById("landingCard").classList.remove("hidden");
+}
+
+function showAdminLogin() {
+  hideAllCards();
+  document.getElementById("adminLoginCard").classList.remove("hidden");
+}
+
+function showViewerLogin() {
+  hideAllCards();
+  document.getElementById("viewerLoginCard").classList.remove("hidden");
+}
+
+async function adminLogin() {
+  const username = document.getElementById("adminUsername").value;
+  const password = document.getElementById("adminPassword").value;
+  const errEl = document.getElementById("adminLoginError");
   errEl.textContent = "";
   try {
     const res = await fetch("/api/login", {
@@ -60,19 +165,115 @@ async function login() {
     });
     const data = await res.json();
     if (!res.ok) { errEl.textContent = data.error || "Login failed"; return; }
-    token = data.token;
-    localStorage.setItem("token", token);
+    saveSession("admin", data.token, null, null);
     showDashboard();
   } catch (e) {
     errEl.textContent = "Could not reach server";
   }
 }
 
+async function viewerLogin() {
+  const name = document.getElementById("viewerName").value.trim();
+  const password = document.getElementById("viewerPassword").value;
+  const errEl = document.getElementById("viewerLoginError");
+  errEl.textContent = "";
+  if (!name) { errEl.textContent = "Enter your name"; return; }
+  pendingCreds = { name, password };
+  await attemptViewerLogin(errEl);
+}
+
+async function attemptViewerLogin(errEl) {
+  try {
+    const res = await fetch("/api/viewer-login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(pendingCreds),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      if (errEl) errEl.textContent = data.error || "Login failed";
+      stopPendingPoll();
+      return;
+    }
+    if (data.ok) {
+      stopPendingPoll();
+      const exp = Date.now() + 5 * 60 * 1000;
+      saveSession("viewer", data.token, data.name, exp);
+      showDashboard();
+    } else if (data.status === "revoked") {
+      stopPendingPoll();
+      hideAllCards();
+      document.getElementById("revokedCard").classList.remove("hidden");
+    } else {
+      hideAllCards();
+      document.getElementById("pendingCard").classList.remove("hidden");
+      if (!pendingPollTimer) {
+        pendingPollTimer = setInterval(() => attemptViewerLogin(null), 5000);
+      }
+    }
+  } catch (e) {
+    if (errEl) errEl.textContent = "Could not reach server";
+  }
+}
+
+function stopPendingPoll() {
+  if (pendingPollTimer) { clearInterval(pendingPollTimer); pendingPollTimer = null; }
+}
+
+function cancelPending() {
+  stopPendingPoll();
+  pendingCreds = null;
+  backToLanding();
+}
+
+function saveSession(r, tok, name, exp) {
+  role = r; token = tok; viewerName = name; expiresAt = exp;
+  localStorage.setItem("role", r);
+  localStorage.setItem("token", tok);
+  if (name) localStorage.setItem("viewerName", name); else localStorage.removeItem("viewerName");
+  if (exp) localStorage.setItem("expiresAt", String(exp)); else localStorage.removeItem("expiresAt");
+}
+
+function logout() {
+  if (expiryTimer) clearTimeout(expiryTimer);
+  if (ws) ws.close();
+  localStorage.clear();
+  role = token = viewerName = null;
+  expiresAt = 0;
+  backToLanding();
+}
+
 function showDashboard() {
-  document.getElementById("loginCard").classList.add("hidden");
+  hideAllCards();
   document.getElementById("dashCard").classList.remove("hidden");
+  document.getElementById("dashTitle").textContent = role === "admin" ? "Room Camera (Admin)" : "Room Camera — " + viewerName;
+  document.getElementById("adminControls").classList.toggle("hidden", role !== "admin");
+  document.getElementById("tabWatchersBtn").classList.toggle("hidden", role !== "admin");
+
+  if (role === "viewer" && expiresAt) {
+    if (expiryTimer) clearTimeout(expiryTimer);
+    const msLeft = expiresAt - Date.now();
+    if (msLeft <= 0) { logout(); return; }
+    expiryTimer = setTimeout(() => {
+      logout();
+      alert("Your session expired. Please log in again.");
+    }, msLeft);
+  }
+
+  showTab("live");
   connectWebSocket();
   loadPhotos();
+}
+
+function showTab(name) {
+  document.getElementById("tabLive").classList.toggle("hidden", name !== "live");
+  document.getElementById("tabPhotos").classList.toggle("hidden", name !== "photos");
+  document.getElementById("tabWatchers").classList.toggle("hidden", name !== "watchers");
+  document.getElementById("tabLiveBtn").classList.toggle("active", name === "live");
+  document.getElementById("tabPhotosBtn").classList.toggle("active", name === "photos");
+  document.getElementById("tabWatchersBtn").classList.toggle("active", name === "watchers");
+  if (name === "photos") loadPhotos();
+  if (name === "watchers") loadWatchers();
 }
 
 function connectWebSocket() {
@@ -84,7 +285,7 @@ function connectWebSocket() {
   ws.onopen = () => (statusEl.textContent = "Live");
   ws.onclose = () => {
     statusEl.textContent = "Disconnected - retrying...";
-    setTimeout(connectWebSocket, 2000);
+    setTimeout(() => { if (token) connectWebSocket(); }, 2000);
   };
   ws.onmessage = (event) => {
     if (typeof event.data === "string") {
@@ -107,17 +308,13 @@ function connectWebSocket() {
 }
 
 async function capture() {
-  await fetch("/api/capture", {
-    method: "POST",
-    headers: { Authorization: "Bearer " + token },
-  });
+  await fetch("/api/capture", { method: "POST", headers: { Authorization: "Bearer " + token } });
 }
 
 let flashOn = false;
 async function toggleFlash() {
   flashOn = !flashOn;
-  const btn = document.getElementById("flashBtn");
-  btn.textContent = flashOn ? "Turn Flash Off" : "Turn Flash On";
+  document.getElementById("flashBtn").textContent = flashOn ? "⚡ Flash Off" : "⚡ Flash On";
   await fetch("/api/flash", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
@@ -132,14 +329,104 @@ async function loadPhotos() {
   const gallery = document.getElementById("gallery");
   gallery.innerHTML = "";
   for (const p of photos) {
+    const tile = document.createElement("div");
+    tile.className = "photo-tile";
     const img = document.createElement("img");
     img.src = p.url;
     img.title = new Date(p.takenAt).toLocaleString();
-    gallery.appendChild(img);
+    tile.appendChild(img);
+    if (role === "admin") {
+      const del = document.createElement("button");
+      del.className = "danger del-btn";
+      del.textContent = "🗑️";
+      del.onclick = () => deletePhoto(p.url);
+      tile.appendChild(del);
+    }
+    gallery.appendChild(tile);
   }
 }
 
-if (token) showDashboard();
+async function deletePhoto(url) {
+  await fetch("/api/photos/delete", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+    body: JSON.stringify({ url }),
+  });
+  loadPhotos();
+}
+
+async function loadWatchers() {
+  const res = await fetch("/api/viewers", { headers: { Authorization: "Bearer " + token } });
+  if (!res.ok) return;
+  const viewers = await res.json();
+  const list = document.getElementById("watchersList");
+  list.innerHTML = "";
+  if (viewers.length === 0) {
+    list.innerHTML = '<p class="status">No one has requested access yet.</p>';
+    return;
+  }
+  for (const v of viewers) {
+    const row = document.createElement("div");
+    row.className = "viewer-row";
+    const label = document.createElement("span");
+    label.innerHTML = v.name + ` <span class="badge ${v.status}">${v.status}</span>`;
+    row.appendChild(label);
+
+    const actions = document.createElement("div");
+    actions.className = "row";
+    if (v.status === "pending") {
+      actions.appendChild(makeBtn("Approve", () => viewerAction("approve", v.key)));
+      actions.appendChild(makeBtn("Deny", () => viewerAction("delete", v.key), "danger"));
+    } else if (v.status === "approved") {
+      actions.appendChild(makeBtn("Revoke", () => viewerAction("revoke", v.key), "secondary"));
+      actions.appendChild(makeBtn("Delete", () => viewerAction("delete", v.key), "danger"));
+    } else {
+      actions.appendChild(makeBtn("Re-approve", () => viewerAction("approve", v.key)));
+      actions.appendChild(makeBtn("Delete", () => viewerAction("delete", v.key), "danger"));
+    }
+    row.appendChild(actions);
+    list.appendChild(row);
+  }
+}
+
+function makeBtn(label, onClick, cls) {
+  const b = document.createElement("button");
+  b.className = "small" + (cls ? " " + cls : "");
+  b.textContent = label;
+  b.onclick = onClick;
+  return b;
+}
+
+async function viewerAction(action, key) {
+  await fetch(`/api/viewers/${action}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+    body: JSON.stringify({ key }),
+  });
+  loadWatchers();
+}
+
+async function addViewer() {
+  const input = document.getElementById("newViewerName");
+  const name = input.value.trim();
+  if (!name) return;
+  await fetch("/api/viewers/add", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+    body: JSON.stringify({ name }),
+  });
+  input.value = "";
+  loadWatchers();
+}
+
+if (role === "admin" && token) {
+  showDashboard();
+} else if (role === "viewer" && token && expiresAt > Date.now()) {
+  showDashboard();
+} else {
+  localStorage.clear();
+  backToLanding();
+}
 </script>
 </body>
 </html>
