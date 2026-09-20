@@ -38,6 +38,7 @@
     <div>💧 <span id="humidity">--</span>%</div>
   </div>
   <button onclick="capture()">Capture Photo</button>
+  <button id="flashBtn" onclick="toggleFlash()">Turn Flash On</button>
   <h3>Saved Photos</h3>
   <div id="gallery"></div>
 </div>
@@ -109,6 +110,18 @@ async function capture() {
   await fetch("/api/capture", {
     method: "POST",
     headers: { Authorization: "Bearer " + token },
+  });
+}
+
+let flashOn = false;
+async function toggleFlash() {
+  flashOn = !flashOn;
+  const btn = document.getElementById("flashBtn");
+  btn.textContent = flashOn ? "Turn Flash Off" : "Turn Flash On";
+  await fetch("/api/flash", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+    body: JSON.stringify({ on: flashOn }),
   });
 }
 
