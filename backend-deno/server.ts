@@ -69,6 +69,7 @@ bc.onmessage = (event) => {
       if (ws.readyState === WebSocket.OPEN) ws.send(json);
     }
   } else if (msg.kind === "capture-command") {
+    console.log("Capture-command received via broadcast. Device on this isolate?", !!localDeviceSocket);
     if (localDeviceSocket && localDeviceSocket.readyState === WebSocket.OPEN) {
       localDeviceSocket.send("capture");
     }
@@ -152,6 +153,7 @@ Deno.serve(async (req) => {
   if (url.pathname === "/api/capture" && req.method === "POST") {
     const token = (req.headers.get("authorization") ?? "").replace("Bearer ", "");
     if (!(await verifyToken(token))) return Response.json({ error: "Not logged in" }, { status: 401 });
+    console.log("Capture requested. Device on this isolate?", !!localDeviceSocket);
     if (localDeviceSocket && localDeviceSocket.readyState === WebSocket.OPEN) {
       localDeviceSocket.send("capture");
     }
